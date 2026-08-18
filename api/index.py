@@ -11,6 +11,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from db import execute, fetchall, fetchone, get_db, init_db, USE_PG
 
+init_app_db = init_db
+
 app = Flask(__name__)
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me-in-production-text-vault-super-secure-key-32bytes")
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB limit per file
@@ -19,14 +21,24 @@ MAX_BATCH_FILES = 200  # Max files in a single batch upload
 PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public"))
 
 
-def init_app_db():
-    try:
-        init_db()
-    except Exception as e:
-        print(f"Database initialization error: {e}", file=sys.stderr)
+# Route registration helper that registers both /api/<path> and /<path>
+# This guarantees 100% route matching regardless of whether Vercel serverless rewrites strip or preserve /api
+def api_route(rule, **options):
+    def decorator(f):
+        endpoint = options.pop("endpoint", None)
+        clean = rule if not rule.startswith("/api") else rule[4:]
+        if not clean.startswith("/"):
+            clean = "/" + clean
+        api_path = "/api" + clean
 
+        ep1 = endpoint or f.__name__
+        ep2 = f"{ep1}_raw"
 
-init_app_db()
+        app.add_url_rule(api_path, ep1, f, **options)
+        if clean != "/":
+            app.add_url_rule(clean, ep2, f, **options)
+        return f
+    return decorator
 
 
 # --- Middleware & CORS ---
@@ -41,8 +53,9 @@ def add_cors_headers(response):
 
 @app.errorhandler(404)
 def not_found(e):
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "API route not found"}), 404
+    path = request.path
+    if path.startswith("/api/") or any(path.startswith(p) for p in ["/auth/", "/folders", "/files", "/search", "/import", "/export"]):
+        return jsonify({"error": f"API route '{path}' not found"}), 404
     if os.path.exists(os.path.join(PUBLIC_DIR, "index.html")):
         return send_from_directory(PUBLIC_DIR, "index.html")
     return jsonify({"error": "Not found"}), 404
@@ -103,7 +116,7 @@ def is_descendant(folder_id, ancestor_id, user_id):
     return False
 
 
-# --- Static Files (Local Dev / Fallback) ---
+# --- Static Files (Local Dev / Standalone) ---
 
 @app.route("/")
 def serve_index():
@@ -127,7 +140,7 @@ def serve_favicon():
 
 # --- Health ---
 
-@app.route("/api/health")
+@api_route("/api/health")
 def health():
     return jsonify({
         "status": "healthy",
@@ -138,7 +151,7 @@ def health():
 
 # --- Auth Routes ---
 
-@app.route("/api/auth/register", methods=["POST", "OPTIONS"])
+@api_route("/api/auth/register", methods=["POST", "OPTIONS"])
 def register():
     if request.method == "OPTIONS":
         return jsonify({}), 200
@@ -169,7 +182,7 @@ def register():
     return jsonify({"token": token, "user": {"id": user_id, "username": username}}), 201
 
 
-@app.route("/api/auth/login", methods=["POST", "OPTIONS"])
+@api_route("/api/auth/login", methods=["POST", "OPTIONS"])
 def login():
     if request.method == "OPTIONS":
         return jsonify({}), 200
@@ -192,13 +205,13 @@ def login():
     return jsonify({"token": token, "user": {"id": user["id"], "username": user["username"]}})
 
 
-@app.route("/api/auth/me", methods=["GET", "OPTIONS"])
+@api_route("/api/auth/me", methods=["GET", "OPTIONS"])
 @auth_required
 def me():
     return jsonify({"user": {"id": request.user["userId"], "username": request.user["username"]}})
 
 
-@app.route("/api/auth/change-password", methods=["POST", "OPTIONS"])
+@api_route("/api/auth/change-password", methods=["POST", "OPTIONS"])
 @auth_required
 def change_password():
     user_id = request.user["userId"]
@@ -224,7 +237,7 @@ def change_password():
 
 # --- Folders ---
 
-@app.route("/api/folders", methods=["GET", "POST", "OPTIONS"])
+@api_route("/api/folders", methods=["GET", "POST", "OPTIONS"])
 @auth_required
 def folders():
     user_id = request.user["userId"]
@@ -274,7 +287,7 @@ def folders():
     return jsonify({"folder": folder}), 201
 
 
-@app.route("/api/folders/<int:folder_id>", methods=["PATCH", "DELETE", "OPTIONS"])
+@api_route("/api/folders/<int:folder_id>", methods=["PATCH", "DELETE", "OPTIONS"])
 @auth_required
 def single_folder(folder_id):
     user_id = request.user["userId"]
@@ -284,8 +297,6 @@ def single_folder(folder_id):
 
     if request.method == "DELETE":
         with get_db() as conn:
-            # Recursive delete of subfolders and files if SQLite
-            # In SQLite, PRAGMA foreign_keys = ON handles CASCADE, but manual recursive cleanup guarantees safety:
             def delete_subtree(fid):
                 subfolders = fetchall(conn, "SELECT id FROM folders WHERE parent_folder_id = ? AND user_id = ?", (fid, user_id))
                 for sub in subfolders:
@@ -342,9 +353,12 @@ def single_folder(folder_id):
             (folder_id,),
         )
 
+    return jsonify({"folder": updated})
+
+
 # --- Folder Download, Duplicate & Text Bundle ---
 
-@app.route("/api/folders/<int:folder_id>/download", methods=["GET", "OPTIONS"])
+@api_route("/api/folders/<int:folder_id>/download", methods=["GET", "OPTIONS"])
 @auth_required
 def download_folder_zip(folder_id):
     import io
@@ -397,7 +411,7 @@ def download_folder_zip(folder_id):
     )
 
 
-@app.route("/api/folders/<int:folder_id>/duplicate", methods=["POST", "OPTIONS"])
+@api_route("/api/folders/<int:folder_id>/duplicate", methods=["POST", "OPTIONS"])
 @auth_required
 def duplicate_folder(folder_id):
     user_id = request.user["userId"]
@@ -439,7 +453,7 @@ def duplicate_folder(folder_id):
     return jsonify({"folder": cloned_folder}), 201
 
 
-@app.route("/api/folders/<int:folder_id>/text-bundle", methods=["GET", "OPTIONS"])
+@api_route("/api/folders/<int:folder_id>/text-bundle", methods=["GET", "OPTIONS"])
 @auth_required
 def get_folder_text_bundle(folder_id):
     user_id = request.user["userId"]
@@ -482,7 +496,7 @@ def get_folder_text_bundle(folder_id):
 
 # --- Files ---
 
-@app.route("/api/files", methods=["GET", "POST", "OPTIONS"])
+@api_route("/api/files", methods=["GET", "POST", "OPTIONS"])
 @auth_required
 def files():
     user_id = request.user["userId"]
@@ -547,7 +561,7 @@ def files():
     return jsonify({"file": file_obj}), 201
 
 
-@app.route("/api/files/<int:file_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
+@api_route("/api/files/<int:file_id>", methods=["GET", "PATCH", "DELETE", "OPTIONS"])
 @auth_required
 def single_file(file_id):
     user_id = request.user["userId"]
@@ -614,7 +628,7 @@ def single_file(file_id):
     return jsonify({"file": updated})
 
 
-@app.route("/api/files/<int:file_id>/duplicate", methods=["POST", "OPTIONS"])
+@api_route("/api/files/<int:file_id>/duplicate", methods=["POST", "OPTIONS"])
 @auth_required
 def duplicate_file(file_id):
     user_id = request.user["userId"]
@@ -642,7 +656,7 @@ def duplicate_file(file_id):
 
 # --- Search ---
 
-@app.route("/api/search", methods=["GET", "OPTIONS"])
+@api_route("/api/search", methods=["GET", "OPTIONS"])
 @auth_required
 def search():
     user_id = request.user["userId"]
@@ -654,7 +668,6 @@ def search():
     search_param = f"%{query}%"
 
     with get_db() as conn:
-        # Search folders
         matched_folders = fetchall(
             conn,
             """
@@ -666,7 +679,6 @@ def search():
             (user_id, search_param),
         )
 
-        # Search files (by name and by content snippet)
         matched_files = fetchall(
             conn,
             """
@@ -690,7 +702,7 @@ def search():
 
 # --- Hierarchy Batch Import (Local Folder Upload / Tree Paste) ---
 
-@app.route("/api/import/batch", methods=["POST", "OPTIONS"])
+@api_route("/api/import/batch", methods=["POST", "OPTIONS"])
 @auth_required
 def import_batch():
     user_id = request.user["userId"]
@@ -712,14 +724,11 @@ def import_batch():
     if len(items) > MAX_BATCH_FILES:
         return jsonify({"error": f"Maximum {MAX_BATCH_FILES} files allowed per import"}), 400
 
-    # Cache folders map to resolve paths efficiently
     created_folders_count = 0
     created_files_count = 0
 
     with get_db() as conn:
-        # Load existing folders for the user
         existing_folders = fetchall(conn, "SELECT id, parent_folder_id, name FROM folders WHERE user_id = ?", (user_id,))
-        # Key: (parent_id, normalized_name) -> folder_id
         folder_cache = {
             (f["parent_folder_id"], f["name"].strip().lower()): f["id"]
             for f in existing_folders
@@ -750,7 +759,6 @@ def import_batch():
             if not raw_path:
                 continue
 
-            # Normalize path separators
             parts = [p.strip() for p in raw_path.replace("\\", "/").split("/") if p.strip() and p.strip() != "."]
             if not parts:
                 continue
@@ -762,7 +770,6 @@ def import_batch():
             for folder_part in folder_parts:
                 current_parent = get_or_create_folder(current_parent, folder_part)
 
-            # If no folder was created or specified, require or create a default folder
             if current_parent is None:
                 current_parent = get_or_create_folder(None, "Imported")
 
@@ -782,7 +789,7 @@ def import_batch():
 
 # --- Export Vault ---
 
-@app.route("/api/export", methods=["GET", "OPTIONS"])
+@api_route("/api/export", methods=["GET", "OPTIONS"])
 @auth_required
 def export_vault():
     user_id = request.user["userId"]
@@ -799,5 +806,5 @@ def export_vault():
 
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
+    port = int(os.getenv("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=True)

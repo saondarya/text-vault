@@ -49,8 +49,11 @@ class TextVaultApiTests(unittest.TestCase):
         res = self.client.post("/api/auth/register", json={"username": "alice", "password": "mypassword"})
         self.assertEqual(res.status_code, 409)
 
-        # Login
+        # Test both /api/auth/login and /auth/login (for Vercel serverless prefix independence)
         res = self.client.post("/api/auth/login", json={"username": "alice", "password": "mypassword"})
+        self.assertEqual(res.status_code, 200)
+
+        res = self.client.post("/auth/login", json={"username": "alice", "password": "mypassword"})
         self.assertEqual(res.status_code, 200)
 
         # Invalid login

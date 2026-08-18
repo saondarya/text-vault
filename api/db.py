@@ -1,9 +1,11 @@
 import os
 import sqlite3
+import sys
 from contextlib import contextmanager
 from typing import Any
 
 USE_PG = bool(os.getenv("DATABASE_URL"))
+_db_initialized = False
 
 if USE_PG:
     import psycopg2
@@ -30,9 +32,20 @@ def init_db() -> None:
         _init_sqlite()
 
 
+def ensure_db() -> None:
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+            _db_initialized = True
+        except Exception as e:
+            print(f"Database initialization error: {e}", file=sys.stderr)
+
+
 def _init_sqlite() -> None:
-    with get_db() as conn:
-        conn.execute("PRAGMA foreign_keys = ON")
+    conn = sqlite3.connect(_sqlite_path())
+    conn.execute("PRAGMA foreign_keys = ON")
+    try:
         conn.executescript(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -66,10 +79,14 @@ def _init_sqlite() -> None:
             CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_id);
             """
         )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 def _init_postgres() -> None:
-    with get_db() as conn:
+    conn = psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=RealDictCursor)
+    try:
         cur = conn.cursor()
         cur.execute(
             """
@@ -100,10 +117,14 @@ def _init_postgres() -> None:
             CREATE INDEX IF NOT EXISTS idx_files_folder ON files(folder_id);
             """
         )
+        conn.commit()
+    finally:
+        conn.close()
 
 
 @contextmanager
 def get_db():
+    ensure_db()
     if USE_PG:
         conn = psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=RealDictCursor)
         try:
