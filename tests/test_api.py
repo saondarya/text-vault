@@ -56,6 +56,14 @@ class TextVaultApiTests(unittest.TestCase):
         res = self.client.post("/auth/login", json={"username": "alice", "password": "mypassword"})
         self.assertEqual(res.status_code, 200)
 
+        # Test Vercel rewrite simulation (where Vercel sets path to /api/index.py with x-matched-path header)
+        res = self.client.post(
+            "/api/index.py",
+            json={"username": "alice", "password": "mypassword"},
+            headers={"X-Matched-Path": "/api/auth/login"}
+        )
+        self.assertEqual(res.status_code, 200)
+
         # Invalid login
         res = self.client.post("/api/auth/login", json={"username": "alice", "password": "wrongpassword"})
         self.assertEqual(res.status_code, 401)

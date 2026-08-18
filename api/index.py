@@ -21,6 +21,37 @@ MAX_BATCH_FILES = 200  # Max files in a single batch upload
 PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public"))
 
 
+# WSGI Middleware to extract the real request path from Vercel's proxy headers
+# When Vercel rewrites /api/(.*) to /api/index.py, it passes the original URL in x-matched-path
+class VercelPathFixMiddleware:
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        path = environ.get("PATH_INFO", "")
+        if path in ("/api/index.py", "/api/index", "/index.py", "/index"):
+            matched = (
+                environ.get("HTTP_X_MATCHED_PATH")
+                or environ.get("HTTP_X_VERCEL_MATCHED_PATH")
+                or environ.get("HTTP_X_ORIGINAL_URI")
+                or environ.get("HTTP_X_FORWARDED_URI")
+            )
+            if matched:
+                environ["PATH_INFO"] = matched.split("?")[0]
+            else:
+                route_matches = environ.get("HTTP_X_NOW_ROUTE_MATCHES", "")
+                if "1=" in route_matches:
+                    for part in route_matches.split("&"):
+                        if part.startswith("1="):
+                            environ["PATH_INFO"] = "/api/" + part[2:]
+                            break
+
+        return self.wsgi_app(environ, start_response)
+
+
+app.wsgi_app = VercelPathFixMiddleware(app.wsgi_app)
+
+
 # Route registration helper that registers both /api/<path> and /<path>
 # This guarantees 100% route matching regardless of whether Vercel serverless rewrites strip or preserve /api
 def api_route(rule, **options):
