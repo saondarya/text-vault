@@ -1,5 +1,6 @@
 import os
 import sys
+import urllib.parse
 from functools import wraps
 
 # Ensure local imports work in both standalone and Vercel serverless environments
@@ -21,30 +22,55 @@ MAX_BATCH_FILES = 200  # Max files in a single batch upload
 PUBLIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "public"))
 
 
+def extract_real_path(environ):
+    # 1. Check RAW_URI / REQUEST_URI
+    for key in ("RAW_URI", "REQUEST_URI", "HTTP_X_ORIGINAL_URL", "HTTP_X_FORWARDED_URI", "HTTP_X_VERCEL_FORWARDED_URI"):
+        val = environ.get(key)
+        if val:
+            path_part = val.split("?")[0]
+            if path_part and path_part not in ("/api/index.py", "/api/index", "/index.py", "/index", "/api"):
+                return path_part
+
+    # 2. Check X-Matched-Path (only if not pointing to index.py)
+    for key in ("HTTP_X_MATCHED_PATH", "HTTP_X_VERCEL_MATCHED_PATH", "HTTP_X_FORWARDED_PATH"):
+        val = environ.get(key)
+        if val:
+            path_part = val.split("?")[0]
+            if path_part and path_part not in ("/api/index.py", "/api/index", "/index.py", "/index", "/api"):
+                return path_part
+
+    # 3. Check X-Now-Route-Matches e.g. "1=auth/login" or "1=%2Fauth%2Flogin"
+    route_matches = environ.get("HTTP_X_NOW_ROUTE_MATCHES", "")
+    if route_matches:
+        for part in route_matches.split("&"):
+            if part.startswith("1="):
+                sub = urllib.parse.unquote(part[2:]).lstrip("/")
+                if sub:
+                    return f"/api/{sub}"
+
+    # 4. Check query string param e.g. ?path=auth/login
+    query = environ.get("QUERY_STRING", "")
+    if query:
+        params = urllib.parse.parse_qs(query)
+        if "path" in params and params["path"][0]:
+            sub = params["path"][0].lstrip("/")
+            if sub:
+                return f"/api/{sub}"
+
+    return None
+
+
 # WSGI Middleware to extract the real request path from Vercel's proxy headers
-# When Vercel rewrites /api/(.*) to /api/index.py, it passes the original URL in x-matched-path
 class VercelPathFixMiddleware:
     def __init__(self, wsgi_app):
         self.wsgi_app = wsgi_app
 
     def __call__(self, environ, start_response):
         path = environ.get("PATH_INFO", "")
-        if path in ("/api/index.py", "/api/index", "/index.py", "/index"):
-            matched = (
-                environ.get("HTTP_X_MATCHED_PATH")
-                or environ.get("HTTP_X_VERCEL_MATCHED_PATH")
-                or environ.get("HTTP_X_ORIGINAL_URI")
-                or environ.get("HTTP_X_FORWARDED_URI")
-            )
-            if matched:
-                environ["PATH_INFO"] = matched.split("?")[0]
-            else:
-                route_matches = environ.get("HTTP_X_NOW_ROUTE_MATCHES", "")
-                if "1=" in route_matches:
-                    for part in route_matches.split("&"):
-                        if part.startswith("1="):
-                            environ["PATH_INFO"] = "/api/" + part[2:]
-                            break
+        if path in ("/api/index.py", "/api/index", "/index.py", "/index", "/api", ""):
+            real_path = extract_real_path(environ)
+            if real_path:
+                environ["PATH_INFO"] = real_path
 
         return self.wsgi_app(environ, start_response)
 
@@ -53,7 +79,6 @@ app.wsgi_app = VercelPathFixMiddleware(app.wsgi_app)
 
 
 # Route registration helper that registers both /api/<path> and /<path>
-# This guarantees 100% route matching regardless of whether Vercel serverless rewrites strip or preserve /api
 def api_route(rule, **options):
     def decorator(f):
         endpoint = options.pop("endpoint", None)
@@ -167,6 +192,24 @@ def serve_js(filename):
 @app.route("/favicon.ico")
 def serve_favicon():
     return ("", 204)
+
+
+# --- Fallback Dispatcher for Vercel Entrypoint ---
+
+@app.route("/api/index.py", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
+@app.route("/api/index", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
+@app.route("/api", methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"])
+def vercel_entrypoint_catchall():
+    real_path = extract_real_path(request.environ)
+    if real_path:
+        adapter = app.url_map.bind_to_environ(request.environ, server_name=request.host)
+        try:
+            endpoint, args = adapter.match(real_path, method=request.method)
+            return app.view_functions[endpoint](**args)
+        except Exception as err:
+            print(f"Fallback dispatch error for '{real_path}': {err}", file=sys.stderr)
+
+    return jsonify({"error": f"API route '{real_path or request.path}' not found"}), 404
 
 
 # --- Health ---
@@ -416,12 +459,10 @@ def download_folder_zip(folder_id):
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
         def add_folder_to_zip(fid, current_path):
-            # Files in this folder
             for fl in files_by_folder.get(fid, []):
                 file_zip_path = os.path.join(current_path, fl["name"]).replace("\\", "/")
                 zf.writestr(file_zip_path, fl["content"] or "")
 
-            # Subfolders
             children = subfolders_map.get(fid, [])
             if not children and not files_by_folder.get(fid):
                 zf.writestr(current_path + "/", "")

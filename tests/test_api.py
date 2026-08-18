@@ -56,11 +56,35 @@ class TextVaultApiTests(unittest.TestCase):
         res = self.client.post("/auth/login", json={"username": "alice", "password": "mypassword"})
         self.assertEqual(res.status_code, 200)
 
-        # Test Vercel rewrite simulation (where Vercel sets path to /api/index.py with x-matched-path header)
+        # Test Vercel rewrite simulations:
+        # Case A: x-matched-path header
         res = self.client.post(
             "/api/index.py",
             json={"username": "alice", "password": "mypassword"},
             headers={"X-Matched-Path": "/api/auth/login"}
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # Case B: x-now-route-matches header
+        res = self.client.post(
+            "/api/index.py",
+            json={"username": "alice", "password": "mypassword"},
+            headers={"X-Now-Route-Matches": "1=auth/login"}
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # Case C: RAW_URI environ
+        res = self.client.post(
+            "/api/index.py",
+            json={"username": "alice", "password": "mypassword"},
+            environ_overrides={"RAW_URI": "/api/auth/login"}
+        )
+        self.assertEqual(res.status_code, 200)
+
+        # Case D: Fallback query parameter ?path=auth/login (from vercel.json ?path=$1)
+        res = self.client.post(
+            "/api/index.py?path=auth/login",
+            json={"username": "alice", "password": "mypassword"}
         )
         self.assertEqual(res.status_code, 200)
 
