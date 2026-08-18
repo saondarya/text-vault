@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Text Vault - Multi-Device Cloud Text & Folder Manager</title>
+  <meta name="description" content="Lightweight cloud text manager with folder hierarchies, local folder import, copy-paste snippets, and cross-device sync." />
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <!-- AUTH SCREEN -->
+  <div id="login-screen" class="screen">
+    <div class="auth-container">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="app-icon">📁</div>
+          <h1>Text Vault</h1>
+          <p class="subtitle">Access your notes, code & folder hierarchies from any device</p>
+        </div>
+
+        <form id="login-form">
+          <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="Enter username" required minlength="3" autocomplete="username" />
+          </div>
+
+          <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" placeholder="••••••••" required minlength="6" autocomplete="current-password" />
+          </div>
+
+          <div id="auth-error" class="alert-box error hidden"></div>
+
+          <button type="submit" id="auth-btn" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+
+        <div class="auth-footer">
+          <span id="toggle-label">Don't have an account?</span>
+          <button type="button" id="toggle-mode" class="link-btn">Create one</button>
+        </div>
+
+        <div class="auth-features">
+          <div class="feat-item">🔒 Multi-device password protection</div>
+          <div class="feat-item">📂 Multi-level folder hierarchies</div>
+          <div class="feat-item">📋 Quick paste & folder import</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN VAULT SCREEN -->
+  <div id="vault-screen" class="screen hidden">
+    <!-- Top Navbar -->
+    <header class="app-header">
+      <div class="header-left">
+        <button id="menu-btn" class="icon-btn mobile-only" aria-label="Toggle Sidebar" title="Toggle Sidebar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+        </button>
+        <div class="logo">
+          <span class="logo-icon">📁</span>
+          <span class="logo-text">Text Vault</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <button id="search-trigger-btn" class="search-trigger">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <span>Search vault or text...</span>
+          <kbd class="kbd-badge">Ctrl K</kbd>
+        </button>
+      </div>
+
+      <div class="header-right">
+        <button id="top-quick-paste-btn" class="btn btn-secondary btn-sm" title="Quickly paste clipboard text">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+          <span>Quick Paste</span>
+        </button>
+        <button id="top-import-folder-btn" class="btn btn-secondary btn-sm" title="Import folder or files from your computer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+          <span>Import Folder</span>
+        </button>
+        <button id="top-export-btn" class="icon-btn" title="Export vault data" aria-label="Export vault">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </button>
+        <div class="user-profile">
+          <span class="avatar-circle" id="user-avatar">U</span>
+          <span class="user-name" id="user-label">User</span>
+        </div>
+        <button id="logout-btn" class="icon-btn" title="Sign out" aria-label="Sign out">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Workspace Layout -->
+    <div class="layout-container">
+      <!-- SIDEBAR: Folders Tree -->
+      <aside id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+          <div class="sidebar-title">
+            <span>Folders</span>
+            <span id="folder-count-badge" class="count-badge">0</span>
+          </div>
+          <button id="new-root-folder-btn" class="btn btn-primary btn-xs" title="New Folder">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            <span>New</span>
+          </button>
+        </div>
+
+        <div class="sidebar-search">
+          <input type="text" id="folder-filter-input" placeholder="Filter folders..." />
+        </div>
+
+        <div id="folder-tree" class="folder-tree">
+          <!-- Dynamically rendered folder tree -->
+        </div>
+
+        <div class="sidebar-footer">
+          <button id="sidebar-import-btn" class="btn btn-ghost btn-sm btn-block">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+            <span>Import Folder / Files</span>
+          </button>
+        </div>
+      </aside>
+
+      <div id="sidebar-overlay" class="sidebar-overlay hidden"></div>
+
+      <!-- MAIN CONTENT -->
+      <main class="main-content">
+        <!-- WELCOME SCREEN (No folder selected) -->
+        <div id="welcome-view" class="welcome-view">
+          <div class="welcome-card">
+            <div class="welcome-icon">📁</div>
+            <h2>Welcome to Text Vault</h2>
+            <p>Organize your text files, notes, and code snippets across any device.</p>
+            <div class="welcome-actions">
+              <button id="welcome-new-folder-btn" class="btn btn-primary">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span>Create First Folder</span>
+              </button>
+              <button id="welcome-quick-paste-btn" class="btn btn-secondary">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                <span>Paste Text Snippet</span>
+              </button>
+              <button id="welcome-import-folder-btn" class="btn btn-secondary">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+                <span>Import Local Folder</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- WORKSPACE VIEW (Split into File List & Editor) -->
+        <div id="workspace-view" class="workspace-view hidden">
+          <!-- MIDDLE: File List Pane -->
+          <section class="files-pane">
+            <div class="files-header">
+              <div class="files-breadcrumbs" id="folder-breadcrumbs">
+                <!-- Breadcrumbs rendered here -->
+              </div>
+              <div class="files-header-actions">
+                <button id="new-file-btn" class="btn btn-primary btn-xs" title="Create new file">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                  <span>New</span>
+                </button>
+                <button id="paste-here-btn" class="btn btn-secondary btn-xs" title="Paste text into this folder">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path><rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect></svg>
+                  <span>Paste</span>
+                </button>
+                <button id="download-folder-btn" class="btn btn-secondary btn-xs" title="Download entire folder as ZIP">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>ZIP</span>
+                </button>
+                <button id="copy-folder-text-btn" class="btn btn-secondary btn-xs" title="Copy all text from this folder and subfolders">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                  <span>Copy All</span>
+                </button>
+                <button id="duplicate-folder-btn" class="icon-btn btn-xs" title="Duplicate folder and all contents">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                </button>
+              </div>
+            </div>
+
+            <div class="files-search-box">
+              <input type="text" id="file-filter-input" placeholder="Filter files in folder..." />
+            </div>
+
+            <ul id="file-list" class="file-list">
+              <!-- Dynamically populated files -->
+            </ul>
+          </section>
+
+          <!-- RIGHT: Text Editor Pane -->
+          <section class="editor-pane">
+            <!-- No File Selected State -->
+            <div id="editor-empty" class="editor-empty">
+              <div class="empty-state-content">
+                <div class="empty-icon">📄</div>
+                <p>Select a file from the list or create a new one to start viewing and editing.</p>
+                <button id="empty-new-file-btn" class="btn btn-secondary btn-sm">
+                  <span>+ Create File</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Active Editor -->
+            <div id="editor-container" class="editor-container hidden">
+              <div class="editor-toolbar">
+                <div class="editor-title-row">
+                  <input type="text" id="file-name-input" class="file-name-input" placeholder="filename.txt" title="Click to edit file name" />
+                  <div class="editor-folder-select-wrap">
+                    <span class="folder-label">Folder:</span>
+                    <select id="file-folder-select" class="folder-select" title="Move file to another folder"></select>
+                  </div>
+                </div>
+
+                <div class="editor-actions-row">
+                  <div class="editor-status-wrap">
+                    <span id="save-status-indicator" class="status-indicator saved">Saved</span>
+                  </div>
+
+                  <div class="editor-btn-group">
+                    <button id="copy-text-btn" class="btn btn-secondary btn-sm highlight-btn" title="Copy entire text to clipboard (Ctrl+Shift+C)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      <span>Copy Text</span>
+                    </button>
+                    <button id="save-file-btn" class="btn btn-primary btn-sm" title="Save file (Ctrl+S)">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                      <span>Save</span>
+                    </button>
+                    <button id="duplicate-file-btn" class="icon-btn" title="Duplicate file" aria-label="Duplicate file">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    </button>
+                    <button id="download-file-btn" class="icon-btn" title="Download as file" aria-label="Download file">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                    </button>
+                    <button id="delete-active-file-btn" class="icon-btn danger-icon" title="Delete file" aria-label="Delete file">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Main Text Area -->
+              <div class="editor-body">
+                <textarea id="file-content-editor" placeholder="Paste or type your text/code here... (Auto-saves automatically)" spellcheck="false"></textarea>
+              </div>
+
+              <!-- Editor Status Footer -->
+              <div class="editor-footer">
+                <div class="editor-stats">
+                  <span id="stat-lines">0 lines</span>
+                  <span class="stat-dot">•</span>
+                  <span id="stat-words">0 words</span>
+                  <span class="stat-dot">•</span>
+                  <span id="stat-chars">0 characters</span>
+                  <span class="stat-dot">•</span>
+                  <span id="stat-size">0 B</span>
+                </div>
+                <div class="editor-tip">
+                  <span>Auto-save enabled</span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- MODALS -->
+
+  <!-- 1. Quick Paste Modal -->
+  <div id="quick-paste-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📋 Quick Paste Text</h3>
+        <button class="modal-close-btn" data-close="quick-paste-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-description">Paste any text or snippet from your clipboard and immediately save it to your folder hierarchy.</p>
+        <div class="form-group">
+          <label for="qp-folder-select">Target Folder</label>
+          <select id="qp-folder-select" class="form-control"></select>
+        </div>
+        <div class="form-group">
+          <label for="qp-file-name">File Name</label>
+          <input type="text" id="qp-file-name" class="form-control" placeholder="e.g. notes.txt, snippet.js, query.sql" />
+        </div>
+        <div class="form-group">
+          <div class="label-with-action">
+            <label for="qp-content">Content</label>
+            <button id="qp-read-clipboard-btn" class="link-btn btn-xs">Paste from Clipboard</button>
+          </div>
+          <textarea id="qp-content" class="form-control text-area-lg" placeholder="Paste your text here..."></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="quick-paste-modal">Cancel</button>
+        <button id="qp-submit-btn" class="btn btn-primary">Save to Vault</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Import Local Folder / Files Modal -->
+  <div id="import-folder-modal" class="modal-overlay hidden">
+    <div class="modal-card modal-lg">
+      <div class="modal-header">
+        <h3>📂 Import Local Folder / Files</h3>
+        <button class="modal-close-btn" data-close="import-folder-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="import-tabs">
+          <button id="tab-btn-folder" class="tab-btn active">Pick Local Folder</button>
+          <button id="tab-btn-files" class="tab-btn">Select Multiple Files</button>
+          <button id="tab-btn-paste" class="tab-btn">Paste Path Hierarchy</button>
+        </div>
+
+        <div class="form-group">
+          <label for="import-target-folder">Place inside Folder (Optional):</label>
+          <select id="import-target-folder" class="form-control">
+            <option value="">[Root Directory]</option>
+          </select>
+        </div>
+
+        <!-- Tab 1: Folder Picker -->
+        <div id="tab-pane-folder" class="tab-pane">
+          <div class="drop-zone" id="folder-drop-zone">
+            <div class="drop-icon">📁</div>
+            <p><strong>Click to select a folder from your computer</strong></p>
+            <p class="drop-sub">The folder structure and text/code files will be uploaded into your vault.</p>
+            <input type="file" id="local-folder-input" webkitdirectory directory multiple class="hidden-file-input" />
+            <button type="button" class="btn btn-secondary btn-sm" onclick="$('local-folder-input').click()">Browse Folder</button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Multiple Files Picker -->
+        <div id="tab-pane-files" class="tab-pane hidden">
+          <div class="drop-zone">
+            <div class="drop-icon">📄</div>
+            <p><strong>Click to select one or multiple files</strong></p>
+            <input type="file" id="local-files-input" multiple class="hidden-file-input" />
+            <button type="button" class="btn btn-secondary btn-sm" onclick="$('local-files-input').click()">Browse Files</button>
+          </div>
+        </div>
+
+        <!-- Tab 3: Paste Path Hierarchy -->
+        <div id="tab-pane-paste" class="tab-pane hidden">
+          <p class="modal-description">Paste file paths with content. Format: <code>path/to/file.ext: [content]</code> or separated by <code>--- path/file.txt ---</code></p>
+          <textarea id="paste-hierarchy-text" class="form-control text-area-lg" placeholder="--- src/components/Button.jsx ---
+export default function Button() { ... }
+
+--- src/utils/helpers.js ---
+export const add = (a, b) => a + b;"></textarea>
+        </div>
+
+        <!-- Staged files summary -->
+        <div id="import-staged-summary" class="staged-summary hidden">
+          <div class="staged-title">
+            <strong id="staged-count-text">0 files ready to import</strong>
+          </div>
+          <div id="staged-files-list" class="staged-list"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-ghost" data-close="import-folder-modal">Cancel</button>
+        <button id="import-submit-btn" class="btn btn-primary" disabled>Import Files</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. Global Search Modal (Ctrl/Cmd + K) -->
+  <div id="search-modal" class="modal-overlay hidden">
+    <div class="modal-card modal-search">
+      <div class="search-modal-header">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="global-search-input" placeholder="Search files, folders, or text content..." autofocus />
+        <button class="modal-close-btn" data-close="search-modal">&times;</button>
+      </div>
+      <div id="search-results-container" class="search-results">
+        <div class="search-empty-hint">Type a keyword to find any file, folder, or text snippet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. Generic Prompt / Confirmation Modal -->
+  <div id="dialog-modal" class="modal-overlay hidden">
+    <div class="modal-card modal-sm">
+      <div class="modal-header">
+        <h3 id="dialog-title">Dialog</h3>
+        <button class="modal-close-btn" data-close="dialog-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p id="dialog-message" class="modal-description"></p>
+        <div id="dialog-input-group" class="form-group hidden">
+          <label id="dialog-input-label" for="dialog-input">Name</label>
+          <input type="text" id="dialog-input" class="form-control" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="dialog-cancel-btn" class="btn btn-ghost" data-close="dialog-modal">Cancel</button>
+        <button id="dialog-confirm-btn" class="btn btn-primary">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Toast Notifications -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
